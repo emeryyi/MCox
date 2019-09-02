@@ -1,0 +1,4 @@
+PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+FFLAGS = -fcheck=all -Wall -g -check
+MAIN_LDFLAGS = -fsanitize=address
+FC = gfortran -fsanitize=address -fcheck=all -Wall -g

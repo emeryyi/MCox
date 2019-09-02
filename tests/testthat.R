@@ -1,4 +1,4 @@
 library(testthat)
 library(Mcox)
 
-test_check("Mcox")
+test_check("MCox")

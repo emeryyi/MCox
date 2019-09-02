@@ -1,0 +1,2 @@
+#' @useDynLib MCox
+"_PACKAGE"
