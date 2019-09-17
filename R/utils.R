@@ -77,6 +77,7 @@ Preprocessing = function(data, task_index, time_index, censored_index, weight_in
     task_names = levels(factor(data[,task_index]))
     data$iTask = sapply(data[,task_index], function(task) which(task_names == task))
     data = data[order(data$iTask, -data[,time_index], -data[,censored_index]),]
+    nObs = nrow(data)
     out <- .Fortran(
         "Preprocessing", 
         PACKAGE = "MCox", 
@@ -88,16 +89,16 @@ Preprocessing = function(data, task_index, time_index, censored_index, weight_in
         nObs=as.integer(nrow(data)), 
         nFeatures=as.integer(length(features_indeces)), 
         nTasks=integer(1), 
-        obsBoundByTaskIn=integer(100), 
-        obsBoundByTaskOut=integer(100),
-        groupBoundByTaskIn=integer(100), 
-        groupBoundByTaskOut=integer(100),
+        obsBoundByTaskIn=integer(nObs), 
+        obsBoundByTaskOut=integer(nObs),
+        groupBoundByTaskIn=integer(nObs), 
+        groupBoundByTaskOut=integer(nObs),
         nGroups=integer(1), 
-        obsBoundByGroupIn=integer(100), 
-        obsBoundByGroupOut=integer(100),
-        obsGroupId=integer(100),
-        failureTimes=double(100),
-        tiesTotalWeight=double(100),
+        obsBoundByGroupIn=integer(nObs), 
+        obsBoundByGroupOut=integer(nObs),
+        obsGroupId=integer(nObs),
+        failureTimes=double(nObs),
+        tiesTotalWeight=double(nObs),
         featureMean=double(length(features_indeces) * length(task_names)),
         featureStdDev=double(length(features_indeces) * length(task_names)),
         iError=integer(5)
@@ -124,7 +125,7 @@ Preprocessing = function(data, task_index, time_index, censored_index, weight_in
 #' \dontrun{
 #'    ProjectL1(1:3, 1)
 #' }
-LogLikelihood = function(obj){
+LogLikelihood = function(obj, beta = rep(0, obj$nFeatures)){
     out <- .Fortran(
         "LogLikelihood", 
         PACKAGE = "MCox",
@@ -138,7 +139,7 @@ LogLikelihood = function(obj){
         weight = as.double(obj$weight[1:obj$nObs]), 
         censored = as.integer(obj$censored[1:obj$nObs]), 
         tiesTotalWeight = as.double(obj$tiesTotalWeight[1:obj$nGroups]), 
-        linearPredictor = as.double(rep(0, obj$nObs)), 
+        linearPredictor = as.double(obj$features %*% beta), 
         logLik = double(obj$nTasks)
     )
     return(out)
@@ -222,7 +223,7 @@ GPG_Cycle = function(obj, lambda=1.0){
         linearPredictor = as.double(rep(0, obj$nObs)), 
         logLik = as.double(rep(0, obj$nTasks)),
         stepsize = as.double(rep(0, obj$nFeatures)), 
-        nUpdates = as.integer(100), 
+        nUpdates = as.integer(0), 
         gradient = double(obj$nFeatures*obj$nTasks),
         hessian = double(obj$nFeatures*obj$nTasks), 
         iError = integer(5)
@@ -245,7 +246,58 @@ GPG_Cycle = function(obj, lambda=1.0){
 #' \dontrun{
 #'    ProjectL1(1:3, 1)
 #' }
-GPG_Descent = function(obj, lambda=1.0){
+GPG_Cycle_Backtracking = function(obj, lambda=1.0){
+    out <- .Fortran(
+        "gpg_cycle_backtracking", 
+        PACKAGE = "MCox",
+        nTasks = as.integer(obj$nTasks), 
+        nFeatures = as.integer(obj$nFeatures), 
+        nObs = as.integer(obj$nObs), 
+        nGroups = as.integer(obj$nGroups), 
+        obsBoundByTaskIn = as.integer(obj$obsBoundByTaskIn[1:obj$nTasks]), 
+        obsBoundByTaskOut = as.integer(obj$obsBoundByTaskOut[1:obj$nTasks]),
+        groupBoundByTaskIn = as.integer(obj$groupBoundByTaskIn[1:obj$nTasks]), 
+        groupBoundByTaskOut = as.integer(obj$groupBoundByTaskOut[1:obj$nTasks]),
+        obsBoundByGroupIn = as.integer(obj$obsBoundByGroupIn[1:obj$nGroups]), 
+        obsBoundByGroupOut = as.integer(obj$obsBoundByGroupOut[1:obj$nGroups]),
+        tiesTotalWeight = as.double(obj$tiesTotalWeight[1:obj$nGroups]), 
+        weight = as.double(obj$weight[1:obj$nObs]), 
+        features = as.double(obj$features[1:obj$nObs, ]), 
+        censored = as.integer(obj$censored[1:obj$nObs]),
+        iActive = as.integer(rep(1,obj$nFeatures)),
+        lambda = as.double(lambda),
+        penaltyFactor = as.double(rep(1,obj$nFeatures)),
+        regPower = as.integer(2),
+        regMixing = as.double(0.0),
+        backtrackingFraction = as.double(0.9),
+        beta = as.double(rep(0, obj$nFeatures * obj$nTasks)),
+        linearPredictor = as.double(rep(0, obj$nObs)), 
+        logLik = as.double(rep(0, obj$nTasks)),
+        stepsize = as.double(rep(0, obj$nFeatures)), 
+        nUpdates = as.integer(0), 
+        gradient = double(obj$nFeatures*obj$nTasks),
+        hessian = double(obj$nFeatures*obj$nTasks), 
+        iError = integer(5)
+    )
+    return(out)
+}
+
+
+
+
+#' Projection onto a L1 Ball
+#'
+#' @param vec 
+#' @param radius 
+#'
+#' @return projection
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#'    ProjectL1(1:3, 1)
+#' }
+GPG_Descent = function(obj, lambda=1.0, alg, frac){
     out <- .Fortran(
         "gpg_descent", 
         PACKAGE = "MCox",
@@ -267,9 +319,10 @@ GPG_Descent = function(obj, lambda=1.0){
         penaltyFactor = as.double(rep(1,obj$nFeatures)),
         regPower = as.integer(2),
         regMixing = as.double(0.0),
-        algorithm = as.integer(1),
+        iActive = as.integer(rep(1,obj$nFeatures)),
+        algorithm = as.integer(alg),
         threshold = as.double(1e-3),
-        backtrackingFactor = as.double(0.001),
+        backtrackingFactor = as.double(frac),
         maxIteration = as.integer(1e5),
         beta = as.double(rep(0, obj$nFeatures * obj$nTasks)),
         linearPredictor = as.double(rep(0, obj$nObs)), 

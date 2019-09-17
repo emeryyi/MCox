@@ -15,4 +15,6 @@ LaTeX: pdfLaTeX
 BuildType: Package
 PackageUseDevtools: Yes
 PackageInstallArgs: --no-multiarch --with-keep.source
+PackageBuildArgs: -fcheck=all -Wall -g -check -fno-stack-protector
+PackageCheckArgs: -fcheck=all -Wall -g -check -fno-stack-protector
 PackageRoxygenize: rd,collate,namespace

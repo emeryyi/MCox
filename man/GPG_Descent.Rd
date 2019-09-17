@@ -4,7 +4,7 @@
 \alias{GPG_Descent}
 \title{Projection onto a L1 Ball}
 \usage{
-GPG_Descent(obj, lambda = 1)
+GPG_Descent(obj, lambda = 1, alg, frac)
 }
 \arguments{
 \item{vec}{}

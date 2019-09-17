@@ -1,5 +1,5 @@
 ! -------------------------------------------------------------------------------------------------
-SUBROUTINE Preprocessing(&
+SUBROUTINE preprocessing(&
     time, iTask, censored, weight, features, nObs, nFeatures, &
     nTasks, obsBoundByTaskIn, obsBoundByTaskOut,& 
     groupBoundByTaskIn, groupBoundByTaskOut, &
@@ -60,7 +60,7 @@ INTEGER                                 :: allocationFlag
 INTEGER, ALLOCATABLE                    :: ind(:)
 INTEGER                                 :: length
 ! temporary sums
-DOUBLE PRECISION                        :: weightSum(nTasks)
+DOUBLE PRECISION                        :: weightSum
 DOUBLE PRECISION                        :: featureVariance
 
 iError = 0
@@ -87,11 +87,10 @@ obsBoundByTaskOut(nTasks) = nObs
 ! Standardization
 featureMean = 0.0D0
 featureStdDev = 0.0D0 
-weightSum = 0.0D0
 featureVariance = 0.0D0
 
 DO k=1,nTasks
-    !WRITE (*,*) 'task = ', k
+    weightSum = 0.0D0
     length = obsBoundByTaskOut(k) - obsBoundByTaskIn(k) + 1
     ALLOCATE(ind(length), STAT = allocationFlag)
     IF(allocationFlag /= 0) THEN
@@ -99,15 +98,13 @@ DO k=1,nTasks
         RETURN
     ENDIF
     ind = (/ (i, i=obsBoundByTaskIn(k), obsBoundByTaskOut(k), 1 ) /)
-    !WRITE (*,*) '    sum of weights = ', sum(weight(ind))
     ! Weight standardization
-    weightSum(k) = sum(weight(ind))
-    !WRITE (*,*) '    sum of weights = ', weightSum(k)
-    IF(weightSum(k) == 0.0D0) THEN
-        weight(ind) = 1.0D0/ length
-        weightSum(k) = 1.0D0
+    weightSum = sum(weight(ind))
+    IF(weightSum == 0.0D0) THEN
+        weight(ind) = 1.0D0 / length
+        weightSum = 1.0D0
     ENDIF
-    weight(ind) = weight(ind) / weightSum(k)
+    weight(ind) = weight(ind) / weightSum
     ! Feature standardization
     DO j=1,nFeatures
         featureMean(j,k) = sum(features(ind,j) * weight(ind))
@@ -123,7 +120,6 @@ DO k=1,nTasks
     ENDDO
     IF (allocated(ind)) DEALLOCATE(ind, STAT = allocationFlag)
     IF(allocationFlag /= 0) WRITE (*,*) 'Error dealloating ind'
-    !WRITE (*,*) '    END'
 ENDDO
 
 ! -------------------------------------------------------------------------------------------------
@@ -182,28 +178,22 @@ nGroups = g
 obsBoundByGroupOut(nGroups) = nObs
 groupBoundByTaskOut(nTasks) = nGroups
 
-!WRITE (*,*) 'GROUPS TOTAL WEIGHTS'
 ! -------------------------------------------------------------------------------------------------
 ! Groups ties total weight
 tiesTotalWeight = 0.0D0
 DO g=1,nGroups
     length = obsBoundByGroupOut(g) - obsBoundByGroupIn(g) + 1
-    !WRITE (*,*) '    length = ', length
     ALLOCATE(ind(length), STAT = allocationFlag)
     IF(allocationFlag /= 0) THEN
         iError = (/1,1,g,0,0/)
         RETURN
     ENDIF
     ind = (/ (i, i=obsBoundByGroupIn(g), obsBoundByGroupOut(g),1) /)
-    !WRITE (*,*) '    ind = ', ind
     tiesTotalWeight(g) = sum(weight(ind) * (1.0D0-censored(ind)))
-    !WRITE (*,*) '    tiesTotalWeight = ', sum(weight(ind) * (1.0D0-censored(ind)))
-    !WRITE (*,*) '    tiesTotalWeight = ', tiesTotalWeight(g)
     IF (allocated(ind)) DEALLOCATE(ind, STAT = allocationFlag)
     IF(allocationFlag /= 0) WRITE (*,*) 'Error dealloating ind'
 ENDDO
 
-!WRITE (*,*) 'END'
 ! -------------------------------------------------------------------------------------------------
-END SUBROUTINE Preprocessing
+END SUBROUTINE preprocessing
 ! -------------------------------------------------------------------------------------------------
