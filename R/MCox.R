@@ -28,42 +28,92 @@ MCox = function(data, task_index, time_index, censored_index, weight_index, feat
     data = data[order(data$iTask, -data[,time_index], -data[,censored_index]),]
     nObs = nrow(data)
     nFeatures = length(features_indeces)
-    nLambda = 10
+    nLambda = 100
     out <- .Fortran(
         "mcox_solution_path", 
         PACKAGE = "MCox",
+        #inputs
         nTasks=as.integer(nTasks),
         nObs=as.integer(nObs),
         nFeatures=as.integer(nFeatures),
+        #
         time=as.double(data[,time_index]), 
         iTask=as.integer(data$iTask), 
         censored=as.integer(data[,censored_index]), 
         weight=as.double(data[,weight_index]), 
         features=apply(as.matrix.noquote(data[,features_indeces]),2,as.numeric), 
+        #
         penaltyFactor=as.double(rep(1, nFeatures)), 
-        regPower=as.double(2), 
+        regPower=as.double(0), 
         regMixing=as.double(0), 
         iExclude=as.integer(rep(0, nFeatures)), 
         df_max=as.integer(nFeatures), 
         df_max_ever=as.integer(nFeatures),
+        #
         nLambda=as.integer(nLambda), 
         lambda=as.double(seq(nLambda,1,-1)/nLambda), 
         lambdaFraction=as.double(1e-3),
+        #
         algorithm=as.integer(0), 
-        threshold=as.double(1e-5), 
+        threshold=as.double(1e-6), 
         backtrackingFraction=as.double(0.8), 
         maxIteration=as.integer(1e5),
+        # outputs
+        failureTimes=double(nObs),
         nLambda_done=integer(1), 
         beta_path=double(nLambda*nTasks*nFeatures), 
         betaNorm_path=double(nLambda*nFeatures), 
         logLik_path=double(nLambda*nTasks), 
         baselineHazard_path=double(nLambda*nObs), 
+        #
+        kkt_condition_zero=double(nLambda*nFeatures), 
+        kkt_condition_nonzero=double(nLambda*nFeatures), 
+        #
         nBeta=integer(nLambda), 
         nBeta_ever=integer(nLambda), 
         iEntered=integer(nFeatures),
+        #
         nUpdates=integer(1), 
         nCycles=integer(1), 
         iError=integer(5)
     )
-    return(out)
+    # Store output in array format
+    nLam = out$nLambda_done
+    beta = array(out$beta_path, dim=c(nFeatures,nTasks,nLambda))[,,seq(nLam)]
+    beta_norm = array(out$betaNorm_path, dim=c(nFeatures,nLambda))[,seq(nLam)]
+    kkt_condition_zero = array(out$kkt_condition_zero, dim=c(nFeatures,nLambda))[,seq(nLam)]
+    kkt_condition_nonzero = array(out$kkt_condition_nonzero, dim=c(nFeatures,nLambda))[,seq(nLam)]
+    logLik = array(out$logLik_path, dim=c(nTasks,nLambda))[,seq(nLam)]
+    # Baseline hazard post processing
+    baselineHazard = array(out$baselineHazard_path, dim=c(nObs,nLambda))[,seq(nLam)]
+    # find the number of groups
+    nGroups = which.min(apply(baselineHazard,1,max)) - 1
+    baselineHazard = baselineHazard[seq(nGroups),]
+    # find group beginning
+    groupsIn = which(c(1, apply(apply(baselineHazard,2,diff)>0,1,max) )== 1)
+    groupsOut = c(groupsIn[-1]-1, nGroups)
+    tmp = list()
+    failureTimes = list()
+    for(k in seq(nTasks)){
+        tmp[[k]] = baselineHazard[seq(groupsIn[k],groupsOut[k]),]
+        failureTimes[[k]] = out$failureTimes[seq(groupsIn[k],groupsOut[k])]
+    }
+    baselineHazard = tmp
+    out = list(
+        nLambda = nLam,
+        lambda = out$lambda[seq(nLam)],
+        beat = beta,
+        betaNorm = beta_norm,
+        kkt_condition_zero = kkt_condition_zero,
+        kkt_condition_nonzero = kkt_condition_nonzero,
+        logLik = logLik,
+        baselineHazard = baselineHazard,
+        failureTimes = failureTimes,
+        nBeta = out$nBeta,
+        nBeta_ever = out$nBeta_ever,
+        iEntered = out$iEntered,
+        nUpdates = out$nUpdates,
+        nCycles = out$nCycles,
+        iError = out$iError
+    )
 }

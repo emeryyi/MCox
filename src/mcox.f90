@@ -5,7 +5,9 @@ SUBROUTINE mcox_solution_path(&
     penaltyFactor, regPower, regMixing, iExclude, df_max, df_max_ever, &
     nLambda, lambda, lambdaFraction, &
     algorithm, threshold, backtrackingFraction, maxIteration, &
-    nLambda_done, beta_path, betaNorm_path, logLik_path, baselineHazard_path, nBeta, nBeta_ever, iEntered, &
+    failureTimes, nLambda_done, beta_path, betaNorm_path, logLik_path, baselineHazard_path, &
+    kkt_condition_zero, kkt_condition_nonzero, &
+    nBeta, nBeta_ever, iEntered, &
     nUpdates, nCycles, iError &
 )
 
@@ -16,8 +18,8 @@ IMPLICIT NONE
 
 ! DIMENSIONS
 INTEGER, INTENT(IN)                     :: nTasks
-INTEGER, INTENT(IN)                     :: nFeatures
 INTEGER, INTENT(IN)                     :: nObs
+INTEGER, INTENT(IN)                     :: nFeatures
 ! DATA INPUT
 DOUBLE PRECISION, INTENT(IN)            :: time(nObs)
 INTEGER, INTENT(IN)                     :: iTask(nObs)
@@ -44,12 +46,16 @@ INTEGER, INTENT(IN)                     :: maxIteration
 ! -------------------------------------------------------------------------------------------------
 ! OUTPUT
 
+! DATA PROCESSING OUTPUT
+DOUBLE PRECISION, INTENT(OUT)           :: failureTimes(nObs)
 ! SOLUTION PATH OUTPUT
 INTEGER, INTENT(OUT)                    :: nLambda_done
-DOUBLE PRECISION, INTENT(OUT)           :: beta_path(nTasks,nFeatures,nLambda)
-DOUBLE PRECISION, INTENT(OUT)           :: betaNorm_path(nTasks,nLambda)
+DOUBLE PRECISION, INTENT(OUT)           :: beta_path(nFeatures,nTasks,nLambda)
+DOUBLE PRECISION, INTENT(OUT)           :: betaNorm_path(nFeatures,nLambda)
 DOUBLE PRECISION, INTENT(OUT)           :: logLik_path(nTasks,nLambda)
-DOUBLE PRECISION, ALLOCATABLE, INTENT(OUT):: baselineHazard_path(:,:)
+DOUBLE PRECISION, INTENT(OUT)           :: baselineHazard_path(nObs,nLambda)
+DOUBLE PRECISION, INTENT(OUT)           :: kkt_condition_zero(nFeatures,nLambda)
+DOUBLE PRECISION, INTENT(OUT)           :: kkt_condition_nonzero(nFeatures,nLambda)
 INTEGER, INTENT(OUT)                    :: nBeta(nLambda)
 INTEGER, INTENT(OUT)                    :: nBeta_ever(nLambda)
 INTEGER, INTENT(OUT)                    :: iEntered(nFeatures)
@@ -73,10 +79,9 @@ INTEGER                                 :: obsGroupId(nObs)
 INTEGER, ALLOCATABLE                    :: obsBoundByGroupIn(:)
 INTEGER, ALLOCATABLE                    :: obsBoundByGroupOut(:)
 DOUBLE PRECISION, ALLOCATABLE           :: tiesTotalWeight(:)
-DOUBLE PRECISION, ALLOCATABLE           :: failureTimes(:)
 
-DOUBLE PRECISION                        :: featureMean(nFeatures,nTasks)
-DOUBLE PRECISION                        :: featureStdDev(nFeatures,nTasks)
+DOUBLE PRECISION                        :: featureMean(nFeatures, nTasks)
+DOUBLE PRECISION                        :: featureStdDev(nFeatures, nTasks)
 ! TEMPORARY STORAGE
 INTEGER, ALLOCATABLE                    :: tmp_int(:)
 DOUBLE PRECISION, ALLOCATABLE           :: tmp_dbl(:)
@@ -87,7 +92,7 @@ DOUBLE PRECISION                        :: logLik(nTasks)
 DOUBLE PRECISION                        :: gradient(nTasks)
 DOUBLE PRECISION                        :: hessian(nTasks)
 DOUBLE PRECISION                        :: linearPredictor(nObs)
-DOUBLE PRECISION                        :: beta(nTasks, nFeatures)
+DOUBLE PRECISION                        :: beta(nFeatures, nTasks)
 ! ACTIVE SETS
 INTEGER                                 :: iStrongRuleSet(nFeatures)
 
@@ -99,56 +104,46 @@ INTEGER                                 :: allocationStatus
 
 ! -------------------------------------------------------------------------------------------------
 ! DIMENSIONS AND ALLOCATION
-WRITE (*,*) 'allocate_all...'
 call allocate_all
-WRITE (*,*) 'done.'
 ! -------------------------------------------------------------------------------------------------
 ! PREPROCESSING (DIMENSIONS, GROUPS, STANDARDIZATION)
-WRITE (*,*) 'preprocessing...'
 call preprocessing()
-WRITE (*,*) 'done.'
-WRITE (*,*) 'nGroups = ', nGroups
 ! -------------------------------------------------------------------------------------------------
 ! REALLOCATE (size nObs to size nGroups)
-WRITE (*,*) 'reallocate_all...'
 call reallocate_all()
-WRITE (*,*) 'done.'
 ! -------------------------------------------------------------------------------------------------
 ! IF REGULARIZATION PATH IS NOT PROVIDED BY USER
-WRITE (*,*) 'initialize_lambda...'
 linearPredictor = 0.0D0
 gradient = 0.0D0
 hessian = 0.0D0
 logLik = 0.0D0
 beta = 0.0D0
+kkt_condition_nonzero = 0.0D0
+kkt_condition_zero = 0.0D0
 IF(lambdaFraction < 1.0D0) THEN
     call initialize_lambda()
 ENDIF
-WRITE (*,*) 'done.'
 ! -------------------------------------------------------------------------------------------------
 ! LAMBDA LOOP
-WRITE (*,*) 'LAMBDA LOOP'
-iStrongRuleSet = 1 ! start by excluding all variables
+iStrongRuleSet = 1 ! start by including all variables not excluded
 DO l=1,nLambda
-    WRITE (*,*) '    ',l
-    ! Identify lambda value
     call get_lambda()
     ! First lambda in log-decrease skipped because it must have beta = 0 by construction 
     IF(lambdaFraction >= 1.0D0 .OR. l>1) THEN
-        ! Initialize strong set
         call initialize_strong_rule_set()
-        ! Strong rule loop
         call strong_rule_loop()
     ENDIF
+    call store_results()
+    call kkt_conditions()
 ENDDO
-WRITE (*,*) 'END LAMBDA LOOP.'
 ! -------------------------------------------------------------------------------------------------
 
 
 
 
-
-
+! -------------------------------------------------------------------------------------------------
+! Chunks of codes that use the global variables
+! Extracted for clarity
 ! -------------------------------------------------------------------------------------------------
 CONTAINS
 
@@ -312,7 +307,7 @@ CONTAINS
     ALLOCATE(obsBoundByGroupIn(nObs), STAT = allocationStatus)
     ALLOCATE(obsBoundByGroupOut(nObs), STAT = allocationStatus)
     ALLOCATE(tiesTotalWeight(nObs), STAT = allocationStatus)
-    ALLOCATE(failureTimes(nObs), STAT = allocationStatus)
+    ! ALLOCATE(failureTimes(nObs), STAT = allocationStatus)
     
     IF(allocationStatus /= 0 ) THEN
         iError = (/1, 1, 0, 0, 1/)
@@ -347,12 +342,12 @@ CONTAINS
     ALLOCATE(tiesTotalWeight(nGroups), STAT = allocationStatus)
     tiesTotalWeight = tmp_dbl
 
-    tmp_dbl = failureTimes(1:nGroups)
-    DEALLOCATE(failureTimes)
-    ALLOCATE(failureTimes(nGroups), STAT = allocationStatus)
-    failureTimes = tmp_dbl
+    ! tmp_dbl = failureTimes(1:nGroups)
+    ! DEALLOCATE(failureTimes)
+    ! ALLOCATE(failureTimes(nGroups), STAT = allocationStatus)
+    ! failureTimes = tmp_dbl
 
-    ALLOCATE(baselineHazard_path(nLambda, nGroups), STAT = allocationStatus)
+    !ALLOCATE(baselineHazard_path(nGroups, nLambda), STAT = allocationStatus)
 
     IF(allocationStatus /= 0 ) THEN
         iError = (/1, 1, 0, 0, 2/)
@@ -364,6 +359,9 @@ CONTAINS
     ! ---------------------------------------------------------------------------------------------
     END SUBROUTINE reallocate_all
     ! ---------------------------------------------------------------------------------------------
+
+
+
 
 
 
@@ -388,12 +386,9 @@ CONTAINS
                 tmp = sqrt(sum(gradient**2))/penaltyFactor(j)
         END SELECT
         lambda_current = max(lambda_current, tmp)
-        WRITE (*,*) 'tmp            ', tmp
-        WRITE (*,*) 'lambda_current ', lambda_current
     ENDDO
     ! PREPARE DECREASE FRACTION
     lambda_decrease = lambdaFraction ** (1.0D0 / (nLambda - 1.0D0))
-    WRITE (*,*) 'lambda_decrease ', lambda_decrease
     ! INITIALIZE LOG-LIKELIHOOD
     call LogLikelihood(&
         nTasks, nObs, nGroups, obsBoundByGroupIn, obsBoundByGroupOut,&
@@ -406,12 +401,15 @@ CONTAINS
 
 
 
+
+
+
     
     ! ---------------------------------------------------------------------------------------------
     SUBROUTINE initialize_strong_rule_set()
     ! ---------------------------------------------------------------------------------------------
-    WRITE (*,*) '        STRONG RULE SET CONDITION', 2.0D0*lambda_current - lambda_previous
     DO j=1,nFeatures
+        IF (iStrongRuleSet(j) == 0) CYCLE ! only grow the strong rule set
         IF (iExclude(j) == 1) CYCLE ! skip if excluded so it will always remain excluded
         ! Get gradient
         call PartialDerivatives(&
@@ -427,13 +425,14 @@ CONTAINS
                 tmp = sqrt(sum(gradient**2))/penaltyFactor(j)
         END SELECT
         ! Check condition
-        IF(tmp < 2.0D0*lambda_current - lambda_previous) iStrongRuleSet(j) = 0
-        WRITE (*,*) '            ', j, tmp, iStrongRuleSet(j)
+        IF(tmp >= 2.0D0*lambda_current - lambda_previous) iStrongRuleSet(j) = 0
     ENDDO
     ! ---------------------------------------------------------------------------------------------
     END SUBROUTINE initialize_strong_rule_set
     ! ---------------------------------------------------------------------------------------------
     
+
+
 
 
 
@@ -445,12 +444,10 @@ CONTAINS
     INTEGER                                 :: nStrongRuleCycles, flStrongRule
 
 
-    WRITE (*,*) '    STRONG RULE LOOP'
     nStrongRuleCycles = 0
     flStrongRule = 0 ! all success flag 
     DO 
         nStrongRuleCycles = nStrongRuleCycles + 1
-        WRITE (*,*) '        ', nStrongRuleCycles
         ! Solved penalized MLE with GPG algorithm
         call gpg_descent(&
             nTasks, nFeatures, nObs, nGroups,&
@@ -463,7 +460,6 @@ CONTAINS
             beta, linearPredictor, logLik,&
             nCycles, nUpdates, iError&
         )
-        ! WRITE (*,*) '    ', beta
         ! Catch errors
         IF(iError(1) == 1)THEN
             iError(3) = l
@@ -471,7 +467,7 @@ CONTAINS
         ENDIF
         ! Check strong rule conditions
         DO j=1,nFeatures
-            IF (iStrongRuleSet(j) == 1) CYCLE
+            IF (iStrongRuleSet(j) == 0) CYCLE
             IF (iExclude(j) == 1) CYCLE ! skip if excluded so it will always remain excluded
             ! Get gradient
             call PartialDerivatives(&
@@ -487,10 +483,10 @@ CONTAINS
                     tmp = sqrt(sum(gradient**2))/penaltyFactor(j)
             END SELECT
             ! Check condition
-            IF(tmp > lambda_current) THEN
+            IF(tmp <= lambda_current) THEN
                 ! we have found a violation, so we reintroduce that feature
                 flStrongRule = 1
-                iStrongRuleSet(j) = 1
+                iStrongRuleSet(j) = 0
             ENDIF
         ENDDO
         ! No violation found
@@ -518,11 +514,105 @@ CONTAINS
         ! Logarithmic decrease if not the first one
         IF (l>1) lambda_current = lambda_current * lambda_decrease
     ENDIF
-    WRITE (*,*) '        LAMBDA = ',lambda_current
     ! ---------------------------------------------------------------------------------------------
     END SUBROUTINE get_lambda
     ! ---------------------------------------------------------------------------------------------
         
+        
+    
+
+    
+
+
+
+
+    
+    ! ---------------------------------------------------------------------------------------------
+    SUBROUTINE kkt_conditions()
+    ! might need some rework when we get more general kkt conditions
+    ! ---------------------------------------------------------------------------------------------
+    DO j=1,nFeatures
+        IF(iExclude(j) == 1) CYCLE
+        ! compute gradient
+        call PartialDerivatives(&
+            nTasks, nObs, nGroups, obsBoundByGroupIn, obsBoundByGroupOut,&
+            groupBoundByTaskIn, groupBoundByTaskOut, &
+            weight, features(:,j), censored, tiesTotalWeight, linearPredictor, gradient, hessian&
+        )
+        ! gradient norm
+        SELECT CASE (regPower)
+            CASE (0)
+                tmp = maxval(abs(gradient))
+            CASE (2)
+                tmp = sqrt(sum(gradient**2))
+        END SELECT
+        ! check not NaN
+        IF(isnan(tmp)) THEN
+            iError = (/1,9,l,j,0/)
+            RETURN
+        ENDIF
+        ! condition value and check
+        IF(betaNorm_path(j,l) > 1.0D-16) THEN
+            !non-zero case
+            kkt_condition_nonzero(j,l) = tmp / (penaltyFactor(j)) - lambda_current
+        ELSE
+            !zero case
+            kkt_condition_zero(j,l) = tmp / (penaltyFactor(j)) - lambda_current
+        ENDIF
+    ENDDO
+    ! ---------------------------------------------------------------------------------------------
+    END SUBROUTINE kkt_conditions
+    ! ---------------------------------------------------------------------------------------------
+
+
+
+
+
+
+    ! ---------------------------------------------------------------------------------------------
+    SUBROUTINE store_results()
+    ! ---------------------------------------------------------------------------------------------
+    ! store the destandardized parameters
+    beta_path(:,:,l) = beta / featureStdDev
+    DO j=1, nFeatures
+        IF (iExclude(j) == 1) CYCLE
+        ! compute norms
+        SELECT CASE (regPower)
+            CASE (0)
+                betaNorm_path(j,l) = maxval(abs(beta_path(j,:,l)))
+            CASE (2)
+                betaNorm_path(j,l) = sqrt(sum(beta_path(j,:,l)**2))
+        END SELECT
+        ! check if newly included
+        IF(betaNorm_path(j,l) > 1.0D-16) THEN
+            nBeta(l) = nBeta(l) + 1
+            IF(iEntered(j) == 0)THEN
+                iEntered(j) = l
+                nBeta_ever = nBeta_ever + 1
+            ENDIF
+        ENDIF
+    ENDDO
+    call BaselineHazard(&
+        nTasks, nObs, nGroups, obsBoundByGroupIn, obsBoundByGroupOut,&
+        groupBoundByTaskIn, groupBoundByTaskOut, &
+        weight, linearPredictor, baselineHazard_path(:,l)&
+    )
+    nLambda_done = l
+    logLik_path(:,l) = logLik
+    ! Store previous lambda value for strong rule
+    lambda_previous = lambda_current
+    lambda(l) = lambda_current
+    IF(nBeta(l) > df_max)THEN
+        iError = (/0,1,l,0,0/)
+        RETURN
+    ENDIF
+    IF(nBeta_ever(l) > df_max_ever)THEN
+        iError = (/0,2,l,0,0/)
+        RETURN
+    ENDIF
+    ! ---------------------------------------------------------------------------------------------
+    END SUBROUTINE store_results
+    ! ---------------------------------------------------------------------------------------------
             
     
             

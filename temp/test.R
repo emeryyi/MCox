@@ -1,16 +1,16 @@
-
+#set.seed(1)
 library(MCox)
 #parameters
 p = 20
-K = 2
-n = 200
+K = 1
+n = 3000
 lambda = 0.01 # rate parameter in h0
 rho = 1.0 #shape parameter in h0
-rate_censored = 0.001 # rate parameter of the exponential distribution of C
+rate_censored = 1e-3 # rate parameter of the exponential distribution of C
 #raw data
-X = round(matrix(rnorm(n*p,0,1),n,p),1)
+X = round(matrix(rnorm(n*p,0,1),n,p),1)*2
 beta = (seq(p) -(p+1)/2)*2/p
-beta[min(p,10):p] = 0
+beta[min(p,5):p] = 0
 #weibull distribution baseline
 #ref: https://stats.stackexchange.com/questions/135124/how-to-create-a-toy-survival-time-to-event-data-with-right-censoring
 failure_time = (-log(runif(n)) / (lambda * exp(X %*% beta)))^(1/rho)
@@ -26,35 +26,31 @@ data <- data.frame(
 time_index <- 1
 censored_index <- 2
 task_index <- 3
-
+par(mfrow=c(2,1), mar=c(2,2,2,2))
 out = MCox(data, task_index, time_index, censored_index)
 
 out$iError
 
+matplot(t(out$betaNorm), type = "l", lty=1)
+abline(h = abs(beta), col=1:6, lty=3)
+
+out$nBeta
+out$nCycles
+out$nUpdates
 
 
 
-# 
-# obj = Preprocessing(data, task_index, time_index, censored_index)[[1]]
-# obj
-# 
-# llk = LogLikelihood(obj, beta)
-# llk$logLik
-# llk = LogLikelihood(obj)
-# llk$logLik
-# 
-# # 
-# derivatives = PartialDerivatives(obj, 1)
-# derivatives$gradient
-# derivatives$hessian
-# 
-# out = GPG_Cycle_Backtracking(obj, 1e-1)
-# out = GPG_Cycle(obj, 1e-1)
-# out$beta
-# out$gradient / out$hessian
-# out = GPG_Descent(obj, 1e-1, 1, 0.8)
-# abs(out$beta)>0.00001
-# out$nCycles
-# out$nUpdates
-# out$beta
-# plot(out$beta)
+# compare with glm net
+library(glmnet)
+y=cbind(time=data$time+1,status=1-data$censored)
+fit=glmnet(X,y,family="cox", lambda = out$lambda, weights = rep(1/n,n), 
+           thresh = 1e-14, standardize=TRUE)
+
+
+matplot(abs(t(coef(fit))), add = T, type = "l",lty=2)
+
+max(abs(abs(coef(fit)) - out$betaNorm))
+
+matplot(abs(abs(t(coef(fit)))-t(out$betaNorm)), type = "l",lty=2)
+
+out$nBeta-fit$df

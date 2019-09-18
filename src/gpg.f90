@@ -6,7 +6,7 @@ SUBROUTINE gpg_descent(&
     groupBoundByTaskIn, groupBoundByTaskOut, &
     obsBoundByGroupIn, obsBoundByGroupOut, tiesTotalWeight,&
     weight, features, censored,&
-    regParameter, penaltyFactor, regPower, regMixing, iActive, &
+    regParameter, penaltyFactor, regPower, regMixing, iStrongRuleSet, &
     algorithm, threshold, backtrackingFraction, maxIteration,&
     beta, linearPredictor, logLik,&
     nCycles, nUpdates, iError&
@@ -39,7 +39,7 @@ DOUBLE PRECISION, INTENT(IN)            :: penaltyFactor(nFeatures)
 DOUBLE PRECISION, INTENT(IN)            :: regParameter
 INTEGER, INTENT(IN)                     :: regPower
 DOUBLE PRECISION, INTENT(IN)            :: regMixing
-INTEGER, INTENT(INOUT)                  :: iActive(nFeatures)
+INTEGER, INTENT(INOUT)                  :: iStrongRuleSet(nFeatures)
 
 INTEGER, INTENT(IN)                     :: algorithm
 DOUBLE PRECISION, INTENT(IN)            :: threshold
@@ -66,6 +66,7 @@ DOUBLE PRECISION                        :: gradient(nFeatures,nTasks)
 DOUBLE PRECISION                        :: hessian(nFeatures,nTasks)
 DOUBLE PRECISION                        :: logLik_tmp(nTasks)
 INTEGER                                 :: nCycles_local
+INTEGER                                 :: iActive(nFeatures)
 
 
 ! - INITIALIZATIONS
@@ -75,9 +76,8 @@ beta_tmp = 0.0D0
 gradient = 0.0D0
 hessian = 0.0D0
 logLik_tmp = 0.0D0
-
+iActive = iStrongRuleSet
 DO WHILE (converged == 0)
-    WRITE (*,*) nCycles_local
     stepsize = 0.0D0
     nCycles_local = nCycles_local + 1
     nCycles = nCycles + 1
@@ -121,7 +121,7 @@ DO WHILE (converged == 0)
     ENDIF
     beta = beta_tmp
     logLik = logLik_tmp
-    ! Update the active set ()
+    ! Update the active set
     IF(nCycles_local == 1)THEN
         DO j=1,nFeatures
             IF(maxval(abs(beta(j,:))) < small) iActive(j) = 1
@@ -230,7 +230,6 @@ DO j=1,nFeatures
         ENDIF
         stepsize(j) = 1.0D0 / stepsize(j)
     ENDIF
-    WRITE (*,*) stepsize
     ! PROXIMAL GRADIENT DESCENT STEP
     beta_tmp = beta(j,:)
     CALL Proximal(regParameter, penaltyFactor(j), stepsize(j), regMixing, regPower, nTasks, beta_tmp, gradient_tmp)
@@ -365,7 +364,6 @@ DO j=1,nFeatures
     armijoFlag = 0
     nTries = 0 
     DO WHILE (armijoFlag == 0 .AND. nTries <= 20)
-        WRITE (*,*) stepsize
         linearPredictor_tmp = linearPredictor
         nUpdates = nUpdates + 1
         nTries = nTries + 1
