@@ -62,6 +62,12 @@ INTEGER, INTENT(OUT)                    :: iEntered(nFeatures)
 ! STATISTICS
 INTEGER, INTENT(OUT)                    :: nUpdates
 INTEGER, INTENT(OUT)                    :: nCycles
+! ERROR 
+!       0=OK, 1=FATAL, 2=EARLYSTOP
+!       ID
+!       Feature (j)
+!       Taks (k)
+!       Lambda id (l)
 INTEGER, INTENT(OUT)                    :: iError(5)
 
 ! -------------------------------------------------------------------------------------------------
@@ -104,13 +110,16 @@ INTEGER                                 :: allocationStatus
 
 ! -------------------------------------------------------------------------------------------------
 ! DIMENSIONS AND ALLOCATION
-call allocate_all
+call allocate_all()
+IF(iError(1) == 1 ) RETURN
 ! -------------------------------------------------------------------------------------------------
 ! PREPROCESSING (DIMENSIONS, GROUPS, STANDARDIZATION)
 call preprocessing()
+IF(iError(1) == 1 ) RETURN
 ! -------------------------------------------------------------------------------------------------
 ! REALLOCATE (size nObs to size nGroups)
 call reallocate_all()
+IF(iError(1) == 1 ) RETURN
 ! -------------------------------------------------------------------------------------------------
 ! IF REGULARIZATION PATH IS NOT PROVIDED BY USER
 linearPredictor = 0.0D0
@@ -123,18 +132,23 @@ kkt_condition_zero = 0.0D0
 IF(lambdaFraction < 1.0D0) THEN
     call initialize_lambda()
 ENDIF
+IF(iError(1) == 1 ) RETURN
 ! -------------------------------------------------------------------------------------------------
 ! LAMBDA LOOP
 iStrongRuleSet = 1 ! start by including all variables not excluded
 DO l=1,nLambda
     call get_lambda()
+    IF(iError(1) == 1 ) RETURN
     ! First lambda in log-decrease skipped because it must have beta = 0 by construction 
     IF(lambdaFraction >= 1.0D0 .OR. l>1) THEN
         call initialize_strong_rule_set()
         call strong_rule_loop()
     ENDIF
+    IF(iError(1) == 1 ) RETURN
     call store_results()
+    IF(iError(1) == 1 ) RETURN
     call kkt_conditions()
+    IF(iError(1) == 1 ) RETURN
 ENDDO
 ! -------------------------------------------------------------------------------------------------
 
@@ -462,7 +476,7 @@ CONTAINS
         )
         ! Catch errors
         IF(iError(1) == 1)THEN
-            iError(3) = l
+            iError(5) = l
             RETURN
         ENDIF
         ! Check strong rule conditions
@@ -492,7 +506,10 @@ CONTAINS
         ! No violation found
         IF (flStrongRule == 0) EXIT
         ! Prevent infinite loops
-        IF (nStrongRuleCycles >= 1) EXIT
+        IF (nStrongRuleCycles >= 100) THEN
+            iError = (/2, 6, 0, 0, l/)
+            RETURN
+        ENDIF
     ENDDO   
     ! ---------------------------------------------------------------------------------------------
     END SUBROUTINE strong_rule_loop
@@ -548,7 +565,7 @@ CONTAINS
         END SELECT
         ! check not NaN
         IF(isnan(tmp)) THEN
-            iError = (/1,9,l,j,0/)
+            iError = (/1,9,j,0,l/)
             RETURN
         ENDIF
         ! condition value and check
@@ -603,11 +620,11 @@ CONTAINS
     lambda_previous = lambda_current
     lambda(l) = lambda_current
     IF(nBeta(l) > df_max)THEN
-        iError = (/0,1,l,0,0/)
+        iError = (/2,1,0,0,l/)
         RETURN
     ENDIF
     IF(nBeta_ever(l) > df_max_ever)THEN
-        iError = (/0,2,l,0,0/)
+        iError = (/2,1,0,0,l/)
         RETURN
     ENDIF
     ! ---------------------------------------------------------------------------------------------

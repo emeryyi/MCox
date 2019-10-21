@@ -5,15 +5,25 @@
 \title{Projection onto a L1 Ball}
 \usage{
 MCox(data, task_index, time_index, censored_index, weight_index,
-  features_indeces)
+  features_indices, ...)
 }
 \arguments{
-\item{vec}{}
+\item{data}{}
 
-\item{radius}{}
+\item{task_index}{}
+
+\item{time_index}{}
+
+\item{censored_index}{}
+
+\item{weight_index}{}
+
+\item{features_indices}{}
+
+\item{...}{}
 }
 \value{
-projection
+list
 }
 \description{
 Projection onto a L1 Ball

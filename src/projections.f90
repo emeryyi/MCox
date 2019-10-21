@@ -6,20 +6,20 @@ SUBROUTINE Proximal(lambda, penaltyFactor, stepsize, regMixing, regPower, nTasks
 ! -------------------------------------------------------------------------------------------------
 IMPLICIT NONE
 ! INPUT
-DOUBLE PRECISION, INTENT(IN)        :: lambda              ! lambda
-DOUBLE PRECISION, INTENT(IN)        :: penaltyFactor               ! penalty factor
-DOUBLE PRECISION, INTENT(IN)        :: stepsize              ! stepsize (related to inverse hessian)
-DOUBLE PRECISION, INTENT(IN)        :: regMixing            ! mixing of regularization
-INTEGER, INTENT(IN)                 :: regPower              ! 0=infty of 2=2
-INTEGER, INTENT(IN)                 :: nTasks           ! dimension
-DOUBLE PRECISION, INTENT(INOUT)     :: beta(nTasks)     ! previous estimate to update, contains update at exit
-DOUBLE PRECISION, INTENT(IN)        :: gradient(nTasks)     ! gradientient
+DOUBLE PRECISION, INTENT(IN)        :: lambda                   ! lambda
+DOUBLE PRECISION, INTENT(IN)        :: penaltyFactor            ! penalty factor
+DOUBLE PRECISION, INTENT(IN)        :: stepsize                 ! stepsize (related to inverse hessian)
+DOUBLE PRECISION, INTENT(IN)        :: regMixing                ! mixing of regularization
+INTEGER, INTENT(IN)                 :: regPower                 ! 0=infty of 2=2
+INTEGER, INTENT(IN)                 :: nTasks                   ! dimension
+DOUBLE PRECISION, INTENT(INOUT)     :: beta(nTasks)             ! previous estimate to update, contains update at exit
+DOUBLE PRECISION, INTENT(IN)        :: gradient(nTasks)         ! gradientient
 ! LOCAL
-DOUBLE PRECISION        :: s(nTasks)        ! for soft-thresholding
-DOUBLE PRECISION        :: sgn(nTasks)      ! sign of s
-INTEGER                 :: k                ! counter
-DOUBLE PRECISION        :: proj(nTasks)     ! for l1 projection
-DOUBLE PRECISION        :: tmp, norm        ! for l2 projection
+DOUBLE PRECISION        :: s(nTasks)                            ! for soft-thresholding
+DOUBLE PRECISION        :: sgn(nTasks)                          ! sign of s
+INTEGER                 :: k                                    ! counter
+DOUBLE PRECISION        :: proj(nTasks)                         ! for l1 projection
+DOUBLE PRECISION        :: tmp, norm                            ! for l2 projection
 ! INITIALIZATION
 s = beta - stepsize*gradient
 sgn = 0.0D0

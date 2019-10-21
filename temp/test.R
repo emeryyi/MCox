@@ -1,9 +1,9 @@
 #set.seed(1)
 library(MCox)
 #parameters
-p = 20
+p = 50
 K = 1
-n = 3000
+n = 10000
 lambda = 0.01 # rate parameter in h0
 rho = 1.0 #shape parameter in h0
 rate_censored = 1e-3 # rate parameter of the exponential distribution of C
@@ -27,7 +27,8 @@ time_index <- 1
 censored_index <- 2
 task_index <- 3
 par(mfrow=c(2,1), mar=c(2,2,2,2))
-out = MCox(data, task_index, time_index, censored_index)
+
+out = MCox(data, task_index, time_index, censored_index, maxIteration = 1000)
 
 out$iError
 
@@ -40,17 +41,18 @@ out$nUpdates
 
 
 
-# compare with glm net
+# compare with glmnet
 library(glmnet)
 y=cbind(time=data$time+1,status=1-data$censored)
 fit=glmnet(X,y,family="cox", lambda = out$lambda, weights = rep(1/n,n), 
            thresh = 1e-14, standardize=TRUE)
 
-
+# overlay paths
 matplot(abs(t(coef(fit))), add = T, type = "l",lty=2)
-
+# max difference along the whole path
 max(abs(abs(coef(fit)) - out$betaNorm))
 
 matplot(abs(abs(t(coef(fit)))-t(out$betaNorm)), type = "l",lty=2)
-
+# check if all entered at same point
 out$nBeta-fit$df
+

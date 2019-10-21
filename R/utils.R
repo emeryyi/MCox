@@ -1,3 +1,14 @@
+# This is all obsolete now;
+# it was used to text the different components of the Fortran core
+
+
+
+
+
+
+
+
+
 #' Projection onto a L1 Ball
 #'
 #' @param vec 

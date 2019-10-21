@@ -82,7 +82,7 @@ DO WHILE (converged == 0)
     nCycles_local = nCycles_local + 1
     nCycles = nCycles + 1
     IF(nCycles > maxIteration) THEN
-        iError = (/ 1,6,0,0,0 /)
+        iError = (/ 2,3,0,0,0 /)
         EXIT
     ENDIF
     ! Save previous estimates in current variable to update
@@ -113,7 +113,7 @@ DO WHILE (converged == 0)
             )
     END SELECT
     ! Check for fatal errors
-    IF(iError(1) == 1) EXIT
+    IF(iError(1) == 1) RETURN
     ! Now beta_tmp contains the new estimates and llk_tmp the new likelihood
     ! Compute difference in estimates
     IF(maxval(abs(beta_tmp-beta)) < threshold)THEN
@@ -128,8 +128,8 @@ DO WHILE (converged == 0)
         ENDDO
     ENDIF
     ! Non convergence
-    IF(nCycles_local >= 1000) THEN
-        iError = (/ 1,5,0,0,0 /)
+    IF(nCycles_local >= maxIteration / 10) THEN
+        iError = (/ 2,4,0,0,0 /)
         EXIT
     ENDIF
 ENDDO
@@ -225,8 +225,8 @@ DO j=1,nFeatures
     IF(stepsize(j) == 0.0D0) THEN
         stepsize(j) = maxval(hessian_tmp)
         IF(stepsize(j) < small) THEN
-            iError = (/1,4,0,j,0/)
-            EXIT
+            iError = (/2,5,j,0,0/)
+            RETURN
         ENDIF
         stepsize(j) = 1.0D0 / stepsize(j)
     ENDIF
@@ -355,8 +355,8 @@ DO j=1,nFeatures
     IF(stepsize(j) == 0.0D0) THEN
         stepsize(j) = minval(hessian_tmp)
         IF(stepsize(j) < small) THEN
-            iError = (/1,4,0,j,0/)
-            EXIT
+            iError = (/2,5,j,0,0/)
+            RETURN
         ENDIF
         stepsize(j) = 1.0D0 / stepsize(j)
     ENDIF

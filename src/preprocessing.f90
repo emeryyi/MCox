@@ -6,6 +6,7 @@ SUBROUTINE preprocessing(&
     nGroups, obsBoundByGroupIn, obsBoundByGroupOut, obsGroupId, failureTimes, &
     tiesTotalWeight, featureMean, featureStdDev, iError &
 )
+! Deprecated --- now in the CONTAINS clause of the main subroutine
 ! Preprosess the data set.
 ! This function standardize features and weight as well as creating the groups for risk set updates
 ! -------------------------------------------------------------------------------------------------
